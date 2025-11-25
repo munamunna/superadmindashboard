@@ -10,8 +10,12 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await login(form.email, form.password);
-      navigate("/dashboard");
+      const data = await login(form.email, form.password);
+      if (data.user.is_super_admin) {
+        navigate("/dashboard");
+      } else {
+        alert("Access denied: Super Admin only");
+      }
     } catch {
       alert("Invalid credentials");
     }
