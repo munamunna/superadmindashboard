@@ -4,6 +4,8 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import LandingPage from "./pages/LandingPage";
 import AdminLogin from "./pages/AdminLogin";
 import UserLogin from "./pages/UserLogin";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import Login from "./pages/Login";
 import UserManagement from "./pages/UserManagement";
 import UserPermissions from "./pages/UserPermissions";
@@ -32,6 +34,10 @@ function App() {
         {/* Separate login pages */}
         <Route path="/admin-login" element={<AdminLogin />} />
         <Route path="/user-login" element={<UserLogin />} />
+
+        {/* Password reset pages */}
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
 
         {/* Unauthorized page */}
         <Route path="/unauthorized" element={<Unauthorized />} />

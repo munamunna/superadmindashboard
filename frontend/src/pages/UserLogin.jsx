@@ -140,6 +140,9 @@ const UserLogin = () => {
                 </div>
 
                 <div style={styles.footer}>
+                    <Link to="/forgot-password" style={styles.forgotLink}>
+                        Forgot Password?
+                    </Link>
                     <Link to="/" style={styles.link}>
                         ← Back to portal selection
                     </Link>
@@ -270,6 +273,16 @@ const styles = {
         textAlign: 'center',
         paddingTop: '24px',
         borderTop: '1px solid #e5e7eb',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+    },
+    forgotLink: {
+        color: '#f59e0b',
+        textDecoration: 'none',
+        fontSize: '14px',
+        fontWeight: '600',
+        transition: 'color 0.3s ease',
     },
     link: {
         color: '#10b981',

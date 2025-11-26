@@ -85,3 +85,27 @@ class CommentSerializer(serializers.ModelSerializer):
         fields = ['id', 'page_name', 'user', 'username', 'user_email', 'text', 'created_at', 'updated_at']
         read_only_fields = ['user', 'created_at', 'updated_at']
 
+
+class RequestPasswordResetSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        """Check if user with this email exists"""
+        try:
+            User.objects.get(email=value)
+        except User.DoesNotExist:
+            # Don't reveal if email exists or not for security
+            pass
+        return value
+
+
+class PasswordResetSerializer(serializers.Serializer):
+    token = serializers.UUIDField()
+    new_password = serializers.CharField(min_length=6, write_only=True)
+    confirm_password = serializers.CharField(min_length=6, write_only=True)
+
+    def validate(self, data):
+        """Validate that passwords match"""
+        if data['new_password'] != data['confirm_password']:
+            raise serializers.ValidationError("Passwords do not match")
+        return data

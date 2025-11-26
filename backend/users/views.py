@@ -205,3 +205,87 @@ class CommentViewSet(viewsets.ModelViewSet):
         
         return super().destroy(request, *args, **kwargs)
 
+
+class RequestPasswordResetView(APIView):
+    """Request a password reset token"""
+    
+    def post(self, request):
+        from .serializers import RequestPasswordResetSerializer
+        from .models import PasswordResetToken
+        
+        serializer = RequestPasswordResetSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        email = serializer.validated_data['email']
+        
+        try:
+            user = User.objects.get(email=email)
+            
+            # Create reset token
+            reset_token = PasswordResetToken.objects.create(user=user)
+            
+            # In production, send email here
+            # For now, we'll just print to console
+            reset_url = f"http://localhost:5174/reset-password/{reset_token.token}"
+            print(f"\n{'='*60}")
+            print(f"PASSWORD RESET REQUEST")
+            print(f"{'='*60}")
+            print(f"User: {user.email}")
+            print(f"Reset URL: {reset_url}")
+            print(f"Token expires at: {reset_token.expires_at}")
+            print(f"{'='*60}\n")
+            
+            # Always return success (don't reveal if email exists)
+            return Response({
+                "message": "If an account exists with this email, a password reset link has been sent.",
+                "token": str(reset_token.token)  # Remove this in production!
+            }, status=status.HTTP_200_OK)
+            
+        except User.DoesNotExist:
+            # Don't reveal that user doesn't exist
+            return Response({
+                "message": "If an account exists with this email, a password reset link has been sent."
+            }, status=status.HTTP_200_OK)
+
+
+class PasswordResetView(APIView):
+    """Reset password using token"""
+    
+    def post(self, request):
+        from .serializers import PasswordResetSerializer
+        from .models import PasswordResetToken
+        
+        serializer = PasswordResetSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        token = serializer.validated_data['token']
+        new_password = serializer.validated_data['new_password']
+        
+        try:
+            reset_token = PasswordResetToken.objects.get(token=token)
+            
+            # Check if token is valid
+            if not reset_token.is_valid():
+                return Response({
+                    "error": "This reset link has expired or has already been used."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Reset password
+            user = reset_token.user
+            user.set_password(new_password)
+            user.save()
+            
+            # Mark token as used
+            reset_token.used = True
+            reset_token.save()
+            
+            print(f"\n✅ Password reset successful for {user.email}\n")
+            
+            return Response({
+                "message": "Password has been reset successfully. You can now login with your new password."
+            }, status=status.HTTP_200_OK)
+            
+        except PasswordResetToken.DoesNotExist:
+            return Response({
+                "error": "Invalid reset link."
+            }, status=status.HTTP_400_BAD_REQUEST)
