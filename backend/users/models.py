@@ -72,3 +72,31 @@ class PagePermission(models.Model):
 
     def __str__(self):
         return f"{self.user.email} - {self.page_name}"
+
+
+class Comment(models.Model):
+    PAGE_CHOICES = [
+        ('products', 'Products List'),
+        ('marketing', 'Marketing List'),
+        ('orders', 'Order List'),
+        ('media', 'Media Plans'),
+        ('offers', 'Offer Pricing SKUs'),
+        ('clients', 'Clients'),
+        ('suppliers', 'Suppliers'),
+        ('support', 'Customer Support'),
+        ('sales', 'Sales Reports'),
+        ('finance', 'Finance & Accounting'),
+    ]
+
+    page_name = models.CharField(max_length=50, choices=PAGE_CHOICES)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="comments")
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']  # Newest first
+
+    def __str__(self):
+        return f"{self.user.username} on {self.page_name}: {self.text[:50]}"
+

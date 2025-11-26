@@ -4,7 +4,7 @@ from django.contrib.auth import authenticate
 
 from django.contrib.auth.hashers import make_password
 import secrets, string
-from .models import PagePermission
+from .models import PagePermission, Comment
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -74,3 +74,14 @@ class UserPermissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'email', 'username', 'is_super_admin', 'permissions']
+
+
+class CommentSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+    user_email = serializers.CharField(source='user.email', read_only=True)
+
+    class Meta:
+        model = Comment
+        fields = ['id', 'page_name', 'user', 'username', 'user_email', 'text', 'created_at', 'updated_at']
+        read_only_fields = ['user', 'created_at', 'updated_at']
+

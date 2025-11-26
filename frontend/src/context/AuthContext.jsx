@@ -14,6 +14,10 @@ export const AuthProvider = ({ children }) => {
     console.log("Initializing Token from Storage:", storedToken);
     return storedToken || null;
   });
+  const [permissions, setPermissions] = useState(() => {
+    const storedPermissions = localStorage.getItem("permissions");
+    return storedPermissions ? JSON.parse(storedPermissions) : [];
+  });
 
   // Setup axios interceptor for automatic token refresh
   useEffect(() => {
@@ -68,6 +72,21 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
+  const fetchPermissions = async (token) => {
+    try {
+      const res = await axios.get("http://127.0.0.1:8000/api/auth/my-permissions/", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const perms = res.data;
+      localStorage.setItem("permissions", JSON.stringify(perms));
+      setPermissions(perms);
+      return perms;
+    } catch (error) {
+      console.error("Failed to fetch permissions:", error);
+      return [];
+    }
+  };
+
   const login = async (email, password) => {
     const res = await axios.post("http://127.0.0.1:8000/api/auth/login/", { email, password });
     localStorage.setItem("access", res.data.access);
@@ -75,6 +94,10 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem("user", JSON.stringify(res.data.user));
     setAccessToken(res.data.access);
     setUser(res.data.user);
+
+    // Fetch permissions after login
+    await fetchPermissions(res.data.access);
+
     return res.data;
   };
 
@@ -82,10 +105,22 @@ export const AuthProvider = ({ children }) => {
     localStorage.clear();
     setUser(null);
     setAccessToken(null);
+    setPermissions([]);
+  };
+
+  const hasPagePermission = (pageName, permissionType = 'can_view') => {
+    // Super admins have all permissions
+    if (user?.is_super_admin) return true;
+
+    // Find permission for this page
+    const pagePermission = permissions.find(p => p.page_name === pageName);
+
+    // Check if user has the specific permission type
+    return pagePermission ? pagePermission[permissionType] : false;
   };
 
   return (
-    <AuthContext.Provider value={{ user, accessToken, login, logout }}>
+    <AuthContext.Provider value={{ user, accessToken, permissions, login, logout, hasPagePermission, fetchPermissions }}>
       {children}
     </AuthContext.Provider>
   );
