@@ -3,7 +3,7 @@ import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 
 const CommentSection = ({ pageName }) => {
-    const { accessToken, user } = useContext(AuthContext);
+    const { accessToken, user, permissions: userPermissions } = useContext(AuthContext);
     const [comments, setComments] = useState([]);
     const [newComment, setNewComment] = useState('');
     const [editingComment, setEditingComment] = useState(null);
@@ -17,12 +17,17 @@ const CommentSection = ({ pageName }) => {
         can_delete: false
     });
 
+    // Check permissions whenever pageName or userPermissions change
     useEffect(() => {
         checkPermissions();
+    }, [pageName, userPermissions, user]);
+
+    // Fetch comments when permissions are set
+    useEffect(() => {
         if (permissions.can_view || user?.is_super_admin) {
             fetchComments();
         }
-    }, [pageName]);
+    }, [permissions.can_view, user?.is_super_admin, pageName]);
 
     const checkPermissions = () => {
         // Super admins have all permissions
@@ -36,14 +41,22 @@ const CommentSection = ({ pageName }) => {
             return;
         }
 
-        // Check user permissions for this page
-        const userPermission = user?.permissions?.find(p => p.page_name === pageName);
+        // Check user permissions for this page from AuthContext
+        const userPermission = userPermissions?.find(p => p.page_name === pageName);
         if (userPermission) {
             setPermissions({
                 can_view: userPermission.can_view,
                 can_create: userPermission.can_create,
                 can_edit: userPermission.can_edit,
                 can_delete: userPermission.can_delete
+            });
+        } else {
+            // No permissions found for this page
+            setPermissions({
+                can_view: false,
+                can_create: false,
+                can_edit: false,
+                can_delete: false
             });
         }
     };
