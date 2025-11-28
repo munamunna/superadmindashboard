@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useContext } from 'react';
-import axios from 'axios';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AuthContext } from '../context/AuthContext';
+import { commentApi } from '../services/commentService';
 
 const CommentSection = ({ pageName }) => {
     const { accessToken, user, permissions: userPermissions } = useContext(AuthContext);
-    const [comments, setComments] = useState([]);
+    const queryClient = useQueryClient();
+
     const [newComment, setNewComment] = useState('');
     const [editingComment, setEditingComment] = useState(null);
     const [editText, setEditText] = useState('');
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
     const [permissions, setPermissions] = useState({
         can_view: false,
         can_create: false,
@@ -22,16 +22,14 @@ const CommentSection = ({ pageName }) => {
         checkPermissions();
     }, [pageName, userPermissions, user]);
 
-    // Fetch comments when permissions are set
-    useEffect(() => {
-        if (permissions.can_view || user?.is_super_admin) {
-            fetchComments();
-        }
-    }, [permissions.can_view, user?.is_super_admin, pageName]);
-
     const checkPermissions = () => {
+        console.log('🔍 CommentSection - Checking permissions for page:', pageName);
+        console.log('👤 User:', user);
+        console.log('🔑 User Permissions from Context:', userPermissions);
+
         // Super admins have all permissions
         if (user?.is_super_admin) {
+            console.log('✅ User is super admin - granting all permissions');
             setPermissions({
                 can_view: true,
                 can_create: true,
@@ -43,7 +41,15 @@ const CommentSection = ({ pageName }) => {
 
         // Check user permissions for this page from AuthContext
         const userPermission = userPermissions?.find(p => p.page_name === pageName);
+        console.log('🔎 Found permission for this page:', userPermission);
+
         if (userPermission) {
+            console.log('✅ Setting permissions:', {
+                can_view: userPermission.can_view,
+                can_create: userPermission.can_create,
+                can_edit: userPermission.can_edit,
+                can_delete: userPermission.can_delete
+            });
             setPermissions({
                 can_view: userPermission.can_view,
                 can_create: userPermission.can_create,
@@ -51,7 +57,7 @@ const CommentSection = ({ pageName }) => {
                 can_delete: userPermission.can_delete
             });
         } else {
-            // No permissions found for this page
+            console.log('❌ No permissions found for this page - denying access');
             setPermissions({
                 can_view: false,
                 can_create: false,
@@ -61,67 +67,87 @@ const CommentSection = ({ pageName }) => {
         }
     };
 
-    const fetchComments = async () => {
-        try {
-            setLoading(true);
-            setError(null);
-            const res = await axios.get(`http://127.0.0.1:8000/api/auth/comments/?page_name=${pageName}`, {
-                headers: { Authorization: `Bearer ${accessToken}` }
-            });
-            setComments(res.data);
-        } catch (err) {
-            setError(err.response?.data?.error || 'Failed to load comments');
-        } finally {
-            setLoading(false);
+    // ==================== REACT QUERY HOOKS ====================
+
+    // Fetch comments using React Query
+    const {
+        data: comments = [],
+        isLoading,
+        error,
+        refetch
+    } = useQuery({
+        queryKey: ['comments', pageName],
+        queryFn: () => commentApi.getComments(pageName, accessToken),
+        enabled: (permissions.can_view || user?.is_super_admin) && !!accessToken,
+        staleTime: 2 * 60 * 1000, // 2 minutes
+    });
+
+    // Create comment mutation
+    const createCommentMutation = useMutation({
+        mutationFn: (text) => commentApi.createComment({ pageName, text, accessToken }),
+        onSuccess: (newComment) => {
+            // Optimistic update: add new comment to the list
+            queryClient.setQueryData(['comments', pageName], (oldComments) => [
+                newComment,
+                ...(oldComments || [])
+            ]);
+            setNewComment('');
+            console.log('✅ Comment created successfully');
+        },
+        onError: (error) => {
+            console.error('❌ Failed to create comment:', error);
         }
-    };
+    });
+
+    // Update comment mutation
+    const updateCommentMutation = useMutation({
+        mutationFn: ({ commentId, text }) =>
+            commentApi.updateComment({ commentId, text, accessToken }),
+        onSuccess: (updatedComment) => {
+            // Optimistic update: update the comment in the list
+            queryClient.setQueryData(['comments', pageName], (oldComments) =>
+                oldComments?.map(c => c.id === updatedComment.id ? updatedComment : c) || []
+            );
+            setEditingComment(null);
+            setEditText('');
+            console.log('✅ Comment updated successfully');
+        },
+        onError: (error) => {
+            console.error('❌ Failed to update comment:', error);
+        }
+    });
+
+    // Delete comment mutation
+    const deleteCommentMutation = useMutation({
+        mutationFn: (commentId) => commentApi.deleteComment({ commentId, accessToken }),
+        onSuccess: (deletedCommentId) => {
+            // Optimistic update: remove comment from the list
+            queryClient.setQueryData(['comments', pageName], (oldComments) =>
+                oldComments?.filter(c => c.id !== deletedCommentId) || []
+            );
+            console.log('✅ Comment deleted successfully');
+        },
+        onError: (error) => {
+            console.error('❌ Failed to delete comment:', error);
+        }
+    });
+
+    // ==================== EVENT HANDLERS ====================
 
     const handleCreateComment = async (e) => {
         e.preventDefault();
         if (!newComment.trim()) return;
-
-        try {
-            const res = await axios.post(
-                'http://127.0.0.1:8000/api/auth/comments/',
-                { page_name: pageName, text: newComment },
-                { headers: { Authorization: `Bearer ${accessToken}` } }
-            );
-            setComments([res.data, ...comments]);
-            setNewComment('');
-        } catch (err) {
-            setError(err.response?.data?.error || 'Failed to create comment');
-        }
+        createCommentMutation.mutate(newComment);
     };
 
     const handleEditComment = async (commentId) => {
         if (!editText.trim()) return;
-
-        try {
-            const res = await axios.put(
-                `http://127.0.0.1:8000/api/auth/comments/${commentId}/`,
-                { text: editText },
-                { headers: { Authorization: `Bearer ${accessToken}` } }
-            );
-            setComments(comments.map(c => c.id === commentId ? res.data : c));
-            setEditingComment(null);
-            setEditText('');
-        } catch (err) {
-            setError(err.response?.data?.error || 'Failed to edit comment');
-        }
+        updateCommentMutation.mutate({ commentId, text: editText });
     };
 
     const handleDeleteComment = async (commentId) => {
         if (!window.confirm('Are you sure you want to delete this comment?')) return;
-
-        try {
-            await axios.delete(
-                `http://127.0.0.1:8000/api/auth/comments/${commentId}/`,
-                { headers: { Authorization: `Bearer ${accessToken}` } }
-            );
-            setComments(comments.filter(c => c.id !== commentId));
-        } catch (err) {
-            setError(err.response?.data?.error || 'Failed to delete comment');
-        }
+        deleteCommentMutation.mutate(commentId);
     };
 
     const startEditing = (comment) => {
@@ -139,6 +165,8 @@ const CommentSection = ({ pageName }) => {
         return date.toLocaleString();
     };
 
+    // ==================== RENDER ====================
+
     if (!permissions.can_view && !user?.is_super_admin) {
         return (
             <div className="bg-slate-800 p-4 rounded-lg text-white">
@@ -151,9 +179,14 @@ const CommentSection = ({ pageName }) => {
         <div className="bg-slate-800 p-6 rounded-lg text-white">
             <h3 className="text-xl font-semibold mb-4">Comments</h3>
 
-            {error && (
+            {/* Error Display */}
+            {(error || createCommentMutation.error || updateCommentMutation.error || deleteCommentMutation.error) && (
                 <div className="bg-red-600 p-3 rounded mb-4">
-                    {error}
+                    {error?.response?.data?.error ||
+                        createCommentMutation.error?.response?.data?.error ||
+                        updateCommentMutation.error?.response?.data?.error ||
+                        deleteCommentMutation.error?.response?.data?.error ||
+                        'An error occurred'}
                 </div>
             )}
 
@@ -166,19 +199,24 @@ const CommentSection = ({ pageName }) => {
                         placeholder="Write a comment..."
                         className="w-full p-3 bg-slate-700 text-white rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
                         rows="3"
+                        disabled={createCommentMutation.isPending}
                     />
                     <button
                         type="submit"
-                        className="mt-2 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition"
+                        className="mt-2 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={createCommentMutation.isPending || !newComment.trim()}
                     >
-                        Post Comment
+                        {createCommentMutation.isPending ? 'Posting...' : 'Post Comment'}
                     </button>
                 </form>
             )}
 
             {/* Comments List */}
-            {loading ? (
-                <div className="text-center py-4">Loading comments...</div>
+            {isLoading ? (
+                <div className="text-center py-4">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+                    <p className="mt-2">Loading comments...</p>
+                </div>
             ) : comments.length === 0 ? (
                 <div className="text-gray-400 text-center py-4">No comments yet. Be the first to comment!</div>
             ) : (
@@ -201,6 +239,7 @@ const CommentSection = ({ pageName }) => {
                                             <button
                                                 onClick={() => startEditing(comment)}
                                                 className="text-blue-400 hover:text-blue-300 text-sm"
+                                                disabled={updateCommentMutation.isPending}
                                             >
                                                 Edit
                                             </button>
@@ -208,9 +247,10 @@ const CommentSection = ({ pageName }) => {
                                         {permissions.can_delete && (
                                             <button
                                                 onClick={() => handleDeleteComment(comment.id)}
-                                                className="text-red-400 hover:text-red-300 text-sm"
+                                                className="text-red-400 hover:text-red-300 text-sm disabled:opacity-50"
+                                                disabled={deleteCommentMutation.isPending}
                                             >
-                                                Delete
+                                                {deleteCommentMutation.isPending ? 'Deleting...' : 'Delete'}
                                             </button>
                                         )}
                                     </div>
@@ -225,17 +265,20 @@ const CommentSection = ({ pageName }) => {
                                         onChange={(e) => setEditText(e.target.value)}
                                         className="w-full p-2 bg-slate-600 text-white rounded resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         rows="3"
+                                        disabled={updateCommentMutation.isPending}
                                     />
                                     <div className="flex gap-2 mt-2">
                                         <button
                                             onClick={() => handleEditComment(comment.id)}
-                                            className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-sm"
+                                            className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-sm disabled:opacity-50"
+                                            disabled={updateCommentMutation.isPending || !editText.trim()}
                                         >
-                                            Save
+                                            {updateCommentMutation.isPending ? 'Saving...' : 'Save'}
                                         </button>
                                         <button
                                             onClick={cancelEditing}
                                             className="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded text-sm"
+                                            disabled={updateCommentMutation.isPending}
                                         >
                                             Cancel
                                         </button>
